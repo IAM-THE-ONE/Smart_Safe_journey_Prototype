@@ -1,4 +1,4 @@
-# SafeVoyage AI
+# Smart_Safe_Journey_Prototype
 
 **AI-Powered Smart Tourism Safety & Incident Response Platform**
 
