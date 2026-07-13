@@ -60,5 +60,4 @@ class FirebaseAuthSerializer(serializers.Serializer):
 
 
 class GoogleAuthSerializer(serializers.Serializer):
-    id_token = serializers.CharField()
-    client_id = serializers.CharField(required=False)
+    access_token = serializers.CharField()

@@ -3,9 +3,65 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { authAPI } from '../../services/api';
 import { ShieldAlert, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { auth as firebaseAuth, hasConfig as hasFirebase } from '../../firebase';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
+const GoogleSignInButton: React.FC<{
+  clientId: string;
+  onSuccess: (res: any) => void;
+  onError: (msg: string) => void;
+}> = ({ clientId, onSuccess, onError }) => {
+  const [loading, setLoading] = useState(false);
+  const login = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      try {
+        const res = await authAPI.googleLogin(tokenResponse.access_token);
+        onSuccess(res);
+      } catch (err: any) {
+        onError(err.response?.data?.error || err.message || 'Google sign-in failed');
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => onError('Google sign-in popup closed or failed'),
+  });
+
+  if (!clientId) {
+    return (
+      <button type="button" disabled
+        className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 text-gray-400 font-medium text-sm cursor-not-allowed">
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Google Sign-In (not configured)
+      </button>
+    );
+  }
+
+  return (
+    <button type="button" onClick={() => login()} disabled={loading}
+      className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-700 dark:text-gray-300 font-medium text-sm transition-all disabled:opacity-50">
+      {loading ? (
+        <Loader2 className="w-5 h-5 animate-spin" />
+      ) : (
+        <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+      )}
+      {loading ? 'Signing in...' : 'Sign in with Google'}
+    </button>
+  );
+};
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -107,42 +163,44 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          {CLIENT_ID ? (
-            <GoogleOAuthProvider clientId={CLIENT_ID}>
-              <div className="w-full flex justify-center">
-                <GoogleLogin
-                  onSuccess={async (credentialResponse) => {
-                    try {
-                      const res = await authAPI.googleLogin(
-                        credentialResponse.credential!,
-                        credentialResponse.clientId,
-                      );
-                      localStorage.setItem('access_token', res.data.tokens.access);
-                      localStorage.setItem('refresh_token', res.data.tokens.refresh);
-                      window.location.href = '/';
-                    } catch (err: any) {
-                      setError(err.response?.data?.error || 'Google sign-in failed');
-                    }
-                  }}
-                  onError={() => setError('Google sign-in failed')}
-                  size="large"
-                  shape="pill"
-                  text="signin_with"
-                  width={280}
-                />
-              </div>
+          {true ? (
+            <GoogleOAuthProvider clientId={CLIENT_ID || 'dummy'}>
+              <GoogleSignInButton
+                clientId={CLIENT_ID}
+                onSuccess={(res) => {
+                  localStorage.setItem('access_token', res.data.tokens.access);
+                  localStorage.setItem('refresh_token', res.data.tokens.refresh);
+                  window.location.href = '/';
+                }}
+                onError={(msg) => setError(msg)}
+              />
             </GoogleOAuthProvider>
-          ) : (
-            <button type="button" disabled
-              className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-700 text-gray-400 font-medium text-sm cursor-not-allowed">
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Google Sign-In (not configured)
-            </button>
+          ) : null}
+
+          {hasFirebase && (
+            <div className="mt-3">
+              <button type="button"
+                onClick={async () => {
+                  try {
+                    const provider = new GoogleAuthProvider();
+                    const result = await signInWithPopup(firebaseAuth!, provider);
+                    const idToken = await result.user.getIdToken();
+                    const res = await authAPI.firebaseAuth(idToken);
+                    localStorage.setItem('access_token', res.data.tokens.access);
+                    localStorage.setItem('refresh_token', res.data.tokens.refresh);
+                    window.location.href = '/';
+                  } catch (err: any) {
+                    if (err.code === 'auth/popup-closed-by-user') return;
+                    setError(err.message || 'Firebase sign-in failed');
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-700 dark:text-orange-300 font-medium text-sm transition-all">
+                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                  <path fill="#FF9100" d="M12 2L2 7l2 9 8 6 8-6 2-9-10-5z"/>
+                </svg>
+                Sign in with Firebase
+              </button>
+            </div>
           )}
 
           <div className="mt-6 pt-6 border-t border-gray-100 dark:border-gray-700 text-center">

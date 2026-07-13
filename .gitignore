@@ -46,7 +46,7 @@ Thumbs.db
 docker-compose.override.yml
 
 # Firebase
-firebase/serviceAccountKey.json
+**/serviceAccountKey.json
 
 # Uploads
 uploads/*

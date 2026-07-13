@@ -1,11 +1,13 @@
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import os
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework_simplejwt.tokens import RefreshToken
+import requests as http_requests
 from .serializers import (
     RegisterSerializer, UserSerializer, LoginSerializer,
     ChangePasswordSerializer, ForgotPasswordSerializer, FirebaseAuthSerializer,
@@ -13,6 +15,17 @@ from .serializers import (
 )
 
 token_generator = PasswordResetTokenGenerator()
+
+# Initialize Firebase Admin SDK
+firebase_app = None
+_firebase_creds_path = os.path.join(settings.BASE_DIR, settings.FIREBASE_CREDENTIALS)
+if os.path.exists(_firebase_creds_path):
+    try:
+        import firebase_admin
+        cred = firebase_admin.credentials.Certificate(_firebase_creds_path)
+        firebase_app = firebase_admin.initialize_app(cred)
+    except Exception:
+        pass
 
 User = get_user_model()
 
@@ -63,13 +76,17 @@ class LoginView(APIView):
 
 class FirebaseAuthView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def post(self, request):
         serializer = FirebaseAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        if firebase_app is None:
+            return Response({"error": "Firebase not configured. Add serviceAccountKey.json to firebase/ directory."},
+                            status=status.HTTP_501_NOT_IMPLEMENTED)
         try:
             import firebase_admin.auth
-            decoded = firebase_admin.auth.verify_id_token(serializer.validated_data["id_token"])
+            decoded = firebase_admin.auth.verify_id_token(serializer.validated_data["id_token"], app=firebase_app)
             email = decoded.get("email", "")
             firebase_uid = decoded.get("uid", "")
             name = decoded.get("name", "")
@@ -102,15 +119,19 @@ class GoogleLoginView(APIView):
     def post(self, request):
         serializer = GoogleAuthSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        credential = serializer.validated_data["id_token"]
-        client_id = serializer.validated_data.get("client_id", "")
+        access_token = serializer.validated_data["access_token"]
         try:
-            from google.oauth2 import id_token as google_id_token
-            from google.auth.transport import requests
-            audience = client_id or settings.GOOGLE_CLIENT_ID
-            if not audience:
-                return Response({"error": "Google Client ID not configured on server"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            info = google_id_token.verify_oauth2_token(credential, requests.Request(), audience)
+            resp = http_requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return Response(
+                    {"error": f"Google API error: {resp.status_code} {resp.text[:200]}"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            info = resp.json()
             email = info.get("email", "")
             name = info.get("name", "")
             picture = info.get("picture", "")
@@ -131,10 +152,8 @@ class GoogleLoginView(APIView):
                 "tokens": tokens,
                 "created": created,
             })
-        except ValueError as e:
-            return Response({"error": f"Invalid token: {e}"}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": f"Google login error: {e}"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
@@ -232,6 +251,9 @@ class ResetPasswordView(APIView):
 
 
 class LogoutView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
     def post(self, request):
         try:
             refresh_token = request.data.get("refresh")

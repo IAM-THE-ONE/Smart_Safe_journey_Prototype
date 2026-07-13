@@ -9,17 +9,17 @@ const api = axios.create({
   },
 });
 
+const noAuthEndpoints = ['/auth/login/', '/auth/register/', '/auth/firebase/', '/auth/google-login/', '/auth/token/refresh/', '/auth/logout/'];
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
-  if (token) {
+  if (token && !noAuthEndpoints.some((p) => config.url?.includes(p))) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-const skipAuthRedirect = (url: string = '') =>
-  ['/auth/login/', '/auth/register/', '/auth/firebase/', '/auth/token/refresh/', '/auth/logout/']
-    .some((path) => url.includes(path));
+const skipAuthRedirect = (url: string = '') => noAuthEndpoints.some((path) => url.includes(path));
 
 api.interceptors.response.use(
   (response) => {
@@ -58,7 +58,7 @@ export const authAPI = {
   register: (data: any) => api.post('/auth/register/', data),
   login: (data: any) => api.post('/auth/login/', data),
   firebaseAuth: (idToken: string) => api.post('/auth/firebase/', { id_token: idToken }),
-  googleLogin: (accessToken: string, clientId?: string) => api.post('/auth/google-login/', { id_token: accessToken, client_id: clientId }),
+  googleLogin: (accessToken: string) => api.post('/auth/google-login/', { access_token: accessToken }),
   logout: (refresh?: string) => api.post('/auth/logout/', { refresh }),
   getMe: () => api.get('/auth/me/'),
   updateMe: (data: any) => api.patch('/auth/me/', data),
